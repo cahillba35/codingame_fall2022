@@ -1,0 +1,209 @@
+#include <algorithm>
+#include <iostream>
+#include <string>
+#include <vector>
+
+class GameState
+{
+public:
+    GameState();
+    ~GameState();
+
+    static GameState& GetInstance()
+    {
+        static GameState instance;
+        return instance;
+    }
+
+    void UpdateMyMatter(int matter);
+    void UpdateOppMatter(int matter);
+
+private:
+    int m_myMatter = 0;
+    int m_oppMatter = 0;
+};
+
+struct Vec2
+{
+    int x;
+    int y;
+};
+
+struct GridCellProperties
+{
+    // The first 4 variables describe properties for this cell.
+    int scrapAmount;        // the number of times this tile can be recycled before becoming Grass.
+    int owner;              // 1 = me, 0 = foe, -1 = neutral
+    int units;              // the number of units on this cell. These units belong to the owner of the cell.
+    int recycler;           // 1 if there is a recycler on this cell. This recycler belongs to the owner of the cell. 0 if there is no recycler on this cell.
+
+    // The next 3 variables are helper values.
+    int canBuild;           // 1 if you are allowed to BUILD a recycler on this tile this turn. 0 otherwise.
+    int canSpawn;           // 1 if you are allowed to SPAWN units on this tile this turn. 0 otherwise.
+    int inRangeOfRecycler;  // 1 if this tile's scrapAmount will be decreased at the end of the turn by a nearby recycler. 0 otherwise.
+};
+
+class GridCell
+{
+public:
+    GridCell();
+    ~GridCell();
+
+    void Init(Vec2 pos);
+    void Update(GridCellProperties properties);
+
+private:
+    Vec2 m_pos;
+    GridCellProperties m_properties;
+};
+
+class GridMap
+{
+public:
+    GridMap();
+    ~GridMap();
+
+    void Init(Vec2 size);
+
+    static GridMap& GetInstance()
+    {
+        static GridMap instance;
+        return instance;
+    }
+
+    Vec2 GetSize() const { return m_size; }
+
+    GridCell& GetCell(const Vec2& pos);
+
+private:
+    Vec2 m_size = { 0, 0 };
+
+    std::vector<GridCell> m_cells;
+};
+
+using namespace std;
+
+// cpp-merge --include ../include --source ../src main.cpp
+
+int main()
+{
+    // When game is initialized, the map size is given.
+    Vec2 mapSize = { 0, 0 };
+    cin >> mapSize.x >> mapSize.y;
+    cin.ignore();
+
+    // Initialize the GridMap. This will create all the GridCells.
+    GridMap::GetInstance().Init(mapSize);
+
+    // game loop
+    while (1)
+    {
+        // Each loop we will get the current state of the game. Update our GameState.
+        int my_matter;
+        int opp_matter;
+        cin >> my_matter >> opp_matter;
+        cin.ignore();
+
+        GameState gameState = GameState::GetInstance();
+        gameState.UpdateMyMatter(my_matter);
+        gameState.UpdateOppMatter(opp_matter);
+
+        // Each loop we will get information for each cell on the map. Update our GridMap's GridCells.
+        GridMap gridMap = GridMap::GetInstance();
+        Vec2 size = gridMap.GetSize();
+        for (int y = 0; y < size.y; y++)
+        {
+            for (int x = 0; x < size.x; x++)
+            {
+                // Each cell has 7 properties.
+                GridCellProperties p;
+                cin >> p.scrapAmount >> p.owner >> p.units >> p.recycler >> p.canBuild >> p.canSpawn >> p.inRangeOfRecycler;
+                cin.ignore();
+
+                // Update the GridCell at this position.
+                GridCell& cell = gridMap.GetCell({ x, y });
+                cell.Update(p);
+            }
+        }
+
+        // Write an action using cout. DON'T FORGET THE "<< endl"
+        // To debug: cerr << "Debug messages..." << endl;
+
+        cout << "WAIT" << endl;
+    }
+}
+
+// ----------------------------------------------
+GameState::GameState ()
+{
+}
+
+// ----------------------------------------------
+GameState::~GameState ()
+{
+}
+
+// ----------------------------------------------
+void GameState::UpdateMyMatter (int matter)
+{
+    m_myMatter = matter;
+}
+
+// ----------------------------------------------
+void GameState::UpdateOppMatter (int matter)
+{
+    m_oppMatter = matter;
+}
+
+// ----------------------------------------------
+GridCell::GridCell ()
+{
+}
+
+// ----------------------------------------------
+GridCell::~GridCell ()
+{
+}
+
+// ----------------------------------------------
+void GridCell::Init (Vec2 pos)
+{
+    m_pos = pos;
+}
+
+// ----------------------------------------------
+void GridCell::Update (GridCellProperties properties)
+{
+    m_properties = properties;
+}
+
+// ----------------------------------------------
+GridMap::GridMap ()
+{
+}
+
+// ----------------------------------------------
+GridMap::~GridMap ()
+{
+}
+
+// ----------------------------------------------
+void GridMap::Init (Vec2 size)
+{
+    m_size = size;
+
+    m_cells.resize(m_size.x * m_size.y);
+    for (int y = 0; y < m_size.y; y++)
+    {
+        for (int x = 0; x < m_size.x; x++)
+        {
+            m_cells[y * m_size.x + x].Init({ x, y });
+        }
+    }
+}
+
+// ----------------------------------------------
+GridCell& GridMap::GetCell (const Vec2& pos)
+{
+    return m_cells[pos.y * m_size.x + pos.x];
+}
