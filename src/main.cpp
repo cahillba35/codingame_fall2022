@@ -1,7 +1,8 @@
-
+#include "public/ActionManager.hpp"
+#include "public/EntityManager.hpp"
 #include "public/GameState.hpp"
-#include "public/GridCell.hpp"
-#include "public/GridMap.hpp"
+#include "public/MapManager.hpp"
+#include "public/Vec2.hpp"
 
 #include <iostream>
 #include <string>
@@ -20,43 +21,66 @@ int main()
     cin >> mapSize.x >> mapSize.y;
     cin.ignore();
 
-    // Initialize the GridMap. This will create all the GridCells.
-    GridMap::GetInstance().Init(mapSize);
+    cerr << "map size got" << endl;
 
-    // game loop
+    // Initialize the GridMap. This will create all the GridCells.
+    MapManager::GetInstance().Init(mapSize);
+
+    // Advance Game Loop
     while (1)
     {
+        cerr << "1.0" << endl;
         // Each loop we will get the current state of the game. Update our GameState.
         int my_matter;
+        cerr << "1.0.1" << endl;
         int opp_matter;
+        cerr << "1.0.2" << endl;
         cin >> my_matter >> opp_matter;
+        cerr << "1.0.3" << endl;
         cin.ignore();
 
-        GameState gameState = GameState::GetInstance();
-        gameState.UpdateMyMatter(my_matter);
-        gameState.UpdateOppMatter(opp_matter);
+cerr << "1.1" << endl;
 
-        // Each loop we will get information for each cell on the map. Update our GridMap's GridCells.
-        GridMap gridMap = GridMap::GetInstance();
-        Vec2 size = gridMap.GetSize();
+        GameState& gameState = GameState::GetInstance();
+        cerr << "1.2" << endl;
+        gameState.EnableDebugMessages(false);
+        cerr << "1.3" << endl;
+        gameState.IncrementTurn();
+        cerr << "1.4" << endl;
+        gameState.UpdateMyMatter(my_matter);
+        cerr << "1.5" << endl;
+        gameState.UpdateOppMatter(opp_matter);
+        cerr << "1.6" << endl;
+cerr << "2.0" << endl;
+        // Each loop we will get information for each tile on the map. Update our MapManager's Tiles.
+        MapManager mapManager = MapManager::GetInstance();
+        Vec2 size = mapManager.GetSize();
         for (int y = 0; y < size.y; y++)
         {
             for (int x = 0; x < size.x; x++)
             {
-                // Each cell has 7 properties.
-                GridCellProperties p;
+                // Each tile has 7 properties.
+                TileProperties p;
                 cin >> p.scrapAmount >> p.owner >> p.units >> p.recycler >> p.canBuild >> p.canSpawn >> p.inRangeOfRecycler;
                 cin.ignore();
 
-                // Update the GridCell at this position.
-                GridCell& cell = gridMap.GetCell({ x, y });
-                cell.Update(p);
+                // Update the tile at position { x, y } with the properties p.
+                mapManager.UpdateTileProperties({ x, y }, p);
             }
         }
+        
+cerr << "3.0" << endl;
+        // Each loop we will process entities.
+        EntityManager entityManager = EntityManager::GetInstance();
+cerr << "4.0" << endl;
+        // Clear and recreate all entities from current map state.
+        entityManager.CreateEntitiesFromMap(); 
 
-        // Write an action using cout. DON'T FORGET THE "<< endl"
-        // To debug: cerr << "Debug messages..." << endl;
-
-        cout << "WAIT" << endl;
+        // Each Entity will process map state and make an action.
+        entityManager.ProcessEntities();
+cerr << "5.0" << endl;
+        // Perform all actions that were created.
+        ActionManager actionManager = ActionManager::GetInstance();
+        actionManager.PerformActions();
     }
 }

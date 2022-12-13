@@ -1,13 +1,91 @@
 #include <algorithm>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
+
+struct Vec2
+{
+    int x;
+    int y;
+
+    Vec2() : x(0), y(0) {}
+    Vec2(int x, int y) : x(x), y(y) {}
+
+    bool operator==(const Vec2& other) const
+    {
+        return x == other.x
+            && y == other.y;
+    }
+
+    int ManhattanDistance(const Vec2& other) const
+    {
+        return abs(x - other.x) + abs(y - other.y);
+    }
+};
+
+using namespace std;
+
+enum class ActionType
+{
+    ACTION_TYPE_NONE,
+
+    ACTION_TYPE_MOVE,
+    ACTION_TYPE_BUILD,
+    ACTION_TYPE_SPAWN,
+    ACTION_TYPE_WAIT,
+    ACTION_TYPE_MESSAGE,
+
+    ACTION_TYPE_COUNT
+};
+
+struct Action
+{
+    ActionType type;
+    Vec2 from;
+    Vec2 to;
+    const char* message;
+    uint8_t turnId;
+
+    bool operator==(const Action& other) const
+    {
+        return turnId == other.turnId
+            && type == other.type
+            && from == other.from
+            && to == other.to
+            && message == other.message;
+    }
+
+    void Perform();
+};
+
+class ActionManager
+{
+public:
+    ActionManager();
+    ~ActionManager();
+
+    static ActionManager& GetInstance()
+    {
+        static ActionManager instance;
+        return instance;
+    }
+
+    void PerformActions();
+    void AddAction(const Action& action);
+    void RemoveAction(const Action& action);
+
+    const vector<Action>& GetActions() const { return m_actions; }
+
+private:
+    vector<Action> m_actions;
+};
 
 class GameState
 {
 public:
-    GameState();
-    ~GameState();
+    GameState() {}
+    ~GameState() {}
 
     static GameState& GetInstance()
     {
@@ -15,27 +93,144 @@ public:
         return instance;
     }
 
-    void UpdateMyMatter(int matter);
-    void UpdateOppMatter(int matter);
+    void EnableDebugMessages(bool enable) { m_debugMessagesEnabled = enable; }
+    bool DebugMessagesEnabled() const { return m_debugMessagesEnabled; }
+
+    void IncrementTurn() { m_turn++; }
+    unsigned char GetTurn() const { return m_turn; }
+    void UpdateMyMatter(int matter) { m_myMatter = matter; }
+    void UpdateOppMatter(int matter) { m_oppMatter = matter; }
 
 private:
+    unsigned char m_turn = 0;
     int m_myMatter = 0;
     int m_oppMatter = 0;
+
+    bool m_debugMessagesEnabled = false;
 };
 
-struct Vec2
+using namespace std;
+
+using namespace std;
+
+enum class Alliance
 {
-    int x;
-    int y;
+    ALLIANCE_NONE,
+
+    ALLIANCE_MY,
+    ALLIANCE_OPP,
+
+    ALLIANCE_COUNT
 };
 
-struct GridCellProperties
+enum class EntityType
 {
-    // The first 4 variables describe properties for this cell.
+    ENTITY_TYPE_NONE,
+
+    ENTITY_TYPE_ROBOT,
+    ENTITY_TYPE_RECYCLER,
+
+    ENTITY_TYPE_COUNT
+};
+
+struct Entity
+{
+    EntityType type;
+    Alliance alliance;
+    Vec2 position;
+
+    bool operator==(const Entity& other) const
+    {
+        return type == other.type
+            && alliance == other.alliance
+            && position == other.position;
+    }
+
+    void Process() const;
+};
+
+class EntityManager
+{
+public:
+    EntityManager();
+    ~EntityManager();
+
+    static EntityManager& GetInstance()
+    {
+        static EntityManager instance;
+        return instance;
+    }
+
+    void CreateEntitiesFromMap();
+    void AddEntity(const Entity& entity);
+    void RemoveEntity(const Entity& entity);
+
+    void ProcessEntities();
+
+    const vector<Entity>& GetEntities() const { return m_entities; }
+
+    static const vector<Entity> GetMyRobots()
+    {
+        auto& entities = EntityManager::GetInstance().GetEntities();
+
+        vector<Entity> myEntities;
+        copy_if(entities.begin(), entities.end(), back_inserter(myEntities),
+        [] (const Entity entity)
+        {
+            return entity.alliance == Alliance::ALLIANCE_MY
+                && entity.type == EntityType::ENTITY_TYPE_ROBOT;
+        });
+
+        return myEntities;
+    }
+
+    static const vector<Entity> GetEnemyRobots()
+    {
+        auto& entities = EntityManager::GetInstance().GetEntities();
+
+        vector<Entity> enemyEntities;
+        copy_if(entities.begin(), entities.end(), back_inserter(enemyEntities), 
+        [] (const Entity entity)
+        { 
+            return entity.alliance == Alliance::ALLIANCE_OPP
+                && entity.type == EntityType::ENTITY_TYPE_ROBOT;
+        });
+
+        return enemyEntities;
+    }
+
+    static const Entity& GetNearestEnemyRobot(const Entity& entity)
+    {
+        EntityManager& entityManager = EntityManager::GetInstance();
+        const vector<Entity>& enemyRobots = entityManager.GetEnemyRobots();
+
+        // From the enemyRobots, find the closest one by manhattan distance
+        auto closestEnemy = enemyRobots[0];
+        int closestDistance = entity.position.ManhattanDistance(closestEnemy.position);
+        for (auto& enemy : enemyRobots)
+        {
+            int distance = entity.position.ManhattanDistance(enemy.position);
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestEnemy = enemy;
+            }
+        }
+
+        return closestEnemy;
+    }
+
+private:
+    vector<Entity> m_entities;
+};
+
+struct TileProperties
+{
+    // The first 4 variables describe properties for this tile.
     int scrapAmount;        // the number of times this tile can be recycled before becoming Grass.
     int owner;              // 1 = me, 0 = foe, -1 = neutral
-    int units;              // the number of units on this cell. These units belong to the owner of the cell.
-    int recycler;           // 1 if there is a recycler on this cell. This recycler belongs to the owner of the cell. 0 if there is no recycler on this cell.
+    int units;              // the number of units on this tile. These units belong to the owner of the tile.
+    int recycler;           // 1 if there is a recycler on this tile. This recycler belongs to the owner of the tile. 0 if there is no recycler on this tile.
 
     // The next 3 variables are helper values.
     int canBuild;           // 1 if you are allowed to BUILD a recycler on this tile this turn. 0 otherwise.
@@ -43,47 +238,63 @@ struct GridCellProperties
     int inRangeOfRecycler;  // 1 if this tile's scrapAmount will be decreased at the end of the turn by a nearby recycler. 0 otherwise.
 };
 
-class GridCell
+class Tile
 {
 public:
-    GridCell();
-    ~GridCell();
+    Tile() {}
+    ~Tile() {}
 
     void Init(Vec2 pos);
-    void Update(GridCellProperties properties);
+    void SetProperties(TileProperties properties);
+
+    bool IsEmpty() const { return m_properties.owner == -1; }
+    bool IsMyTile() const { return m_properties.owner == 1; }
+    bool IsOppTile() const { return m_properties.owner == 0; }
+
+    bool HasRecycler() const { return m_properties.recycler == 1; }
+    bool HasUnits() const { return m_properties.units > 0; }
+    int GetUnits() const { return m_properties.units; }
+
+    bool CanBuildRecycler() const { return m_properties.canBuild == 1; }
+    bool CanSpawnUnits() const { return m_properties.canSpawn == 1; }
+    bool IsInRangeOfRecycler() const { return m_properties.inRangeOfRecycler == 1; }
+
+    bool operator==(const Tile& other) const { return m_pos == other.m_pos; }
 
 private:
     Vec2 m_pos;
-    GridCellProperties m_properties;
+    TileProperties m_properties;
 };
 
-class GridMap
+class MapManager
 {
 public:
-    GridMap();
-    ~GridMap();
+    MapManager();
+    ~MapManager();
 
     void Init(Vec2 size);
 
-    static GridMap& GetInstance()
+    static MapManager& GetInstance()
     {
-        static GridMap instance;
+        static MapManager instance;
         return instance;
     }
 
     Vec2 GetSize() const { return m_size; }
 
-    GridCell& GetCell(const Vec2& pos);
+    void UpdateTileProperties(const Vec2& pos, TileProperties properties);
+    const Tile& GetTile(const Vec2& pos) const;
 
 private:
-    Vec2 m_size = { 0, 0 };
+    Vec2 m_size;
 
-    std::vector<GridCell> m_cells;
+    std::vector<Tile> m_tiles;
 };
 
 using namespace std;
 
-// cpp-merge --include ../include --source ../src main.cpp
+// Note: This is a simple example of how to use the cpp-merge tool.
+// cpp-merge --include ../codingame_fall2022/src/public --source ../codingame_fall2022/src/private --output ../codingame_fall2022/src/output.txt ../codingame_fall2022/src/main.cpp
 
 int main()
 {
@@ -92,118 +303,325 @@ int main()
     cin >> mapSize.x >> mapSize.y;
     cin.ignore();
 
-    // Initialize the GridMap. This will create all the GridCells.
-    GridMap::GetInstance().Init(mapSize);
+    cerr << "map size got" << endl;
 
-    // game loop
+    // Initialize the GridMap. This will create all the GridCells.
+    MapManager::GetInstance().Init(mapSize);
+
+    // Advance Game Loop
     while (1)
     {
+        cerr << "1.0" << endl;
         // Each loop we will get the current state of the game. Update our GameState.
         int my_matter;
+        cerr << "1.0.1" << endl;
         int opp_matter;
+        cerr << "1.0.2" << endl;
         cin >> my_matter >> opp_matter;
+        cerr << "1.0.3" << endl;
         cin.ignore();
 
-        GameState gameState = GameState::GetInstance();
-        gameState.UpdateMyMatter(my_matter);
-        gameState.UpdateOppMatter(opp_matter);
+cerr << "1.1" << endl;
 
-        // Each loop we will get information for each cell on the map. Update our GridMap's GridCells.
-        GridMap gridMap = GridMap::GetInstance();
-        Vec2 size = gridMap.GetSize();
+        GameState& gameState = GameState::GetInstance();
+        cerr << "1.2" << endl;
+        gameState.EnableDebugMessages(false);
+        cerr << "1.3" << endl;
+        gameState.IncrementTurn();
+        cerr << "1.4" << endl;
+        gameState.UpdateMyMatter(my_matter);
+        cerr << "1.5" << endl;
+        gameState.UpdateOppMatter(opp_matter);
+        cerr << "1.6" << endl;
+cerr << "2.0" << endl;
+        // Each loop we will get information for each tile on the map. Update our MapManager's Tiles.
+        MapManager mapManager = MapManager::GetInstance();
+        Vec2 size = mapManager.GetSize();
         for (int y = 0; y < size.y; y++)
         {
             for (int x = 0; x < size.x; x++)
             {
-                // Each cell has 7 properties.
-                GridCellProperties p;
+                // Each tile has 7 properties.
+                TileProperties p;
                 cin >> p.scrapAmount >> p.owner >> p.units >> p.recycler >> p.canBuild >> p.canSpawn >> p.inRangeOfRecycler;
                 cin.ignore();
 
-                // Update the GridCell at this position.
-                GridCell& cell = gridMap.GetCell({ x, y });
-                cell.Update(p);
+                // Update the tile at position { x, y } with the properties p.
+                mapManager.UpdateTileProperties({ x, y }, p);
             }
         }
+        
+cerr << "3.0" << endl;
+        // Each loop we will process entities.
+        EntityManager entityManager = EntityManager::GetInstance();
+cerr << "4.0" << endl;
+        // Clear and recreate all entities from current map state.
+        entityManager.CreateEntitiesFromMap(); 
 
-        // Write an action using cout. DON'T FORGET THE "<< endl"
-        // To debug: cerr << "Debug messages..." << endl;
-
-        cout << "WAIT" << endl;
+        // Each Entity will process map state and make an action.
+        entityManager.ProcessEntities();
+cerr << "5.0" << endl;
+        // Perform all actions that were created.
+        ActionManager actionManager = ActionManager::GetInstance();
+        actionManager.PerformActions();
     }
 }
 
 // ----------------------------------------------
-GameState::GameState ()
+void Action::Perform()
+{
+    switch (type)
+    {
+        case ActionType::ACTION_TYPE_MOVE:
+        {
+            // Automatic pathfinding.
+            cout << "MOVE " << 1 << " " << from.x << " " << from.y << " " << to.x << " " << to.y << endl;
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_BUILD:
+        {
+            // Builds a recycler.
+            cout << "BUILD " << from.x << " " << from.y << endl;
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_SPAWN:
+        {
+            // Adds unit to an owned tile.
+            cout << "SPAWN " << 1 << " " << from.x << " " << from.y << endl;
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_WAIT:
+        {
+            // Does nothing.
+            cout << "WAIT" << endl;
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_MESSAGE:
+        {
+            // Displays text on your side of the HUD.
+            cout << "MESSAGE " << message << endl;
+            break;
+        }
+
+        default: { break;}
+    }
+}
+
+// ----------------------------------------------
+ActionManager::ActionManager()
 {
 }
 
 // ----------------------------------------------
-GameState::~GameState ()
+ActionManager::~ActionManager()
 {
 }
 
 // ----------------------------------------------
-void GameState::UpdateMyMatter (int matter)
+void ActionManager::PerformActions()
 {
-    m_myMatter = matter;
+    cerr << "p1.0 " << m_actions.size() << endl;
+    for (auto& action : m_actions)
+    {
+        action.Perform();
+    }
 }
 
 // ----------------------------------------------
-void GameState::UpdateOppMatter (int matter)
+void ActionManager::AddAction(const Action& action)
 {
-    m_oppMatter = matter;
+    m_actions.emplace_back(action);
 }
 
 // ----------------------------------------------
-GridCell::GridCell ()
+void ActionManager::RemoveAction(const Action& action)
+{
+    auto it = find(m_actions.begin(), m_actions.end(), action);
+    if (it != m_actions.end())
+    {
+        m_actions.erase(it);
+    }
+}
+
+namespace
+{
+    Alliance GetTileAlliance(const Tile& tile)
+    {
+        Alliance alliance = Alliance::ALLIANCE_NONE;
+        if (tile.IsMyTile())
+        {
+            alliance = Alliance::ALLIANCE_MY;
+        }
+        else if (tile.IsOppTile())
+        {
+            alliance = Alliance::ALLIANCE_OPP;
+        }
+
+        return alliance;
+    }
+}
+
+// ----------------------------------------------
+void Entity::Process() const
+{
+        GameState gameState = GameState::GetInstance();
+
+        // For now, move this entity to the nearest enemy robot
+        EntityManager entityManager = EntityManager::GetInstance();
+        const vector<Entity>& enemyRobots = entityManager.GetEnemyRobots();
+        const Entity& nearestEnemy = EntityManager::GetNearestEnemyRobot(*this);
+
+        // Create an action to move to the nearest enemy
+        Action action;
+        action.type = ActionType::ACTION_TYPE_MOVE;
+        action.from = position;
+        action.to = nearestEnemy.position;
+        action.turnId = gameState.GetTurn();
+
+        // Add the action to the action manager
+        ActionManager::GetInstance().AddAction(action);
+
+        // Print the action to the console
+        if (gameState.DebugMessagesEnabled())
+        {
+            cout << "Moving from " << action.from.x << ", " << action.from.y << " to " << action.to.x << ", " << action.to.y << endl;
+        }
+    }
+
+// ----------------------------------------------
+EntityManager::EntityManager()
 {
 }
 
 // ----------------------------------------------
-GridCell::~GridCell ()
+EntityManager::~EntityManager()
 {
 }
 
 // ----------------------------------------------
-void GridCell::Init (Vec2 pos)
+void EntityManager::CreateEntitiesFromMap()
+{
+    // Clear out the old entities. We will make new ones from the state of the map.
+    m_entities.clear();
+
+    cerr << "c1.0" << endl;
+
+    // Get the map.
+    MapManager& mapManager = MapManager::GetInstance();
+    Vec2 mapSize = mapManager.GetSize();
+    cerr << "c1.0 " << mapSize.x << " " << mapSize.y << endl;
+    for (int y = 0; y < mapSize.y; ++y)
+    {
+        cerr << "y " << y << endl;
+        for (int x = 0; x < mapSize.x; ++x)
+        {
+            cerr << "x " << x << endl;
+            Vec2 pos(x, y);
+            const Tile& tile = mapManager.GetTile(pos);
+            // print the position of this tile and how many units are at this time
+            cerr << "This tile: " << pos.x << " " << pos.y << " " << tile.GetUnits() << endl;
+
+            // A tile can have a recycler or units, not both.
+            if (tile.HasRecycler())
+            {
+                Entity entity;
+                entity.type = EntityType::ENTITY_TYPE_RECYCLER;
+                entity.alliance = GetTileAlliance(tile);
+                AddEntity(entity);
+            }
+            else if (tile.HasUnits())
+            {
+                for (int i = 0; i < tile.GetUnits(); ++i)
+                {
+                    Entity entity;
+                    entity.type = EntityType::ENTITY_TYPE_ROBOT;
+                    entity.alliance = GetTileAlliance(tile);
+                    AddEntity(entity);
+                }
+            }
+        }
+    }
+}
+
+// ----------------------------------------------
+void EntityManager::AddEntity(const Entity& entity)
+{
+    m_entities.emplace_back(entity);
+}
+
+// ----------------------------------------------
+void EntityManager::RemoveEntity(const Entity& entity)
+{
+    auto it = find(m_entities.begin(), m_entities.end(), entity);
+    if (it != m_entities.end())
+    {
+        m_entities.erase(it);
+    }
+}
+
+// ----------------------------------------------
+void EntityManager::ProcessEntities()
+{
+    cerr << "e1.0" << endl;
+
+    const auto& myRobots = GetMyRobots();
+    cerr << "e1.1 " << myRobots.size() << endl;
+
+    for (auto&& robot : myRobots)
+    {
+        robot.Process();
+    }
+}
+
+// ----------------------------------------------
+MapManager::MapManager()
+{
+}
+
+// ----------------------------------------------
+MapManager::~MapManager()
+{
+}
+
+// ----------------------------------------------
+void Tile::Init(Vec2 pos)
 {
     m_pos = pos;
 }
 
 // ----------------------------------------------
-void GridCell::Update (GridCellProperties properties)
+void Tile::SetProperties(TileProperties properties)
 {
     m_properties = properties;
 }
 
 // ----------------------------------------------
-GridMap::GridMap ()
-{
-}
-
-// ----------------------------------------------
-GridMap::~GridMap ()
-{
-}
-
-// ----------------------------------------------
-void GridMap::Init (Vec2 size)
+void MapManager::Init(Vec2 size)
 {
     m_size = size;
 
-    m_cells.resize(m_size.x * m_size.y);
-    for (int y = 0; y < m_size.y; y++)
+    m_tiles.resize(size.x * size.y);
+    for (int y = 0; y < size.y; ++y)
     {
-        for (int x = 0; x < m_size.x; x++)
+        for (int x = 0; x < size.x; ++x)
         {
-            m_cells[y * m_size.x + x].Init({ x, y });
+            m_tiles[y * size.x + x].Init({ x, y });
         }
     }
 }
 
 // ----------------------------------------------
-GridCell& GridMap::GetCell (const Vec2& pos)
+void MapManager::UpdateTileProperties(const Vec2& pos, TileProperties properties)
 {
-    return m_cells[pos.y * m_size.x + pos.x];
+    m_tiles[pos.y * m_size.x + pos.x].SetProperties(properties);
+}
+
+// ----------------------------------------------
+const Tile& MapManager::GetTile(const Vec2& pos) const
+{
+    return m_tiles[pos.y * m_size.x + pos.x];
 }
