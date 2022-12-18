@@ -1,5 +1,14 @@
 #pragma once
 
+#include <string>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+#include <algorithm>
+
+
+
 struct Vec2
 {
     int x;
@@ -7,6 +16,11 @@ struct Vec2
 
     Vec2() : x(0), y(0) {}
     Vec2(int x, int y) : x(x), y(y) {}
+
+    std::string ToString() const
+    {
+        return "(" + std::to_string(x) + ", " + std::to_string(y) + ")";
+    }
 
     bool operator==(const Vec2& other) const
     {

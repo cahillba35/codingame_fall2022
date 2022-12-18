@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <iostream>
 #include <iterator>
+#include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -11,6 +13,11 @@ struct Vec2
 
     Vec2() : x(0), y(0) {}
     Vec2(int x, int y) : x(x), y(y) {}
+
+    std::string ToString() const
+    {
+        return "(" + std::to_string(x) + ", " + std::to_string(y) + ")";
+    }
 
     bool operator==(const Vec2& other) const
     {
@@ -24,92 +31,7 @@ struct Vec2
     }
 };
 
-using namespace std;
-
-enum class ActionType
-{
-    ACTION_TYPE_NONE,
-
-    ACTION_TYPE_MOVE,
-    ACTION_TYPE_BUILD,
-    ACTION_TYPE_SPAWN,
-    ACTION_TYPE_WAIT,
-    ACTION_TYPE_MESSAGE,
-
-    ACTION_TYPE_COUNT
-};
-
-struct Action
-{
-    ActionType type;
-    Vec2 from;
-    Vec2 to;
-    const char* message;
-    uint8_t turnId;
-
-    bool operator==(const Action& other) const
-    {
-        return turnId == other.turnId
-            && type == other.type
-            && from == other.from
-            && to == other.to
-            && message == other.message;
-    }
-
-    void Perform();
-};
-
-class ActionManager
-{
-public:
-    ActionManager();
-    ~ActionManager();
-
-    static ActionManager& GetInstance()
-    {
-        static ActionManager instance;
-        return instance;
-    }
-
-    void PerformActions();
-    void AddAction(const Action& action);
-    void RemoveAction(const Action& action);
-
-    const vector<Action>& GetActions() const { return m_actions; }
-
-private:
-    vector<Action> m_actions;
-};
-
-class GameState
-{
-public:
-    GameState() {}
-    ~GameState() {}
-
-    static GameState& GetInstance()
-    {
-        static GameState instance;
-        return instance;
-    }
-
-    void EnableDebugMessages(bool enable) { m_debugMessagesEnabled = enable; }
-    bool DebugMessagesEnabled() const { return m_debugMessagesEnabled; }
-
-    void IncrementTurn() { m_turn++; }
-    unsigned char GetTurn() const { return m_turn; }
-    void UpdateMyMatter(int matter) { m_myMatter = matter; }
-    void UpdateOppMatter(int matter) { m_oppMatter = matter; }
-
-private:
-    unsigned char m_turn = 0;
-    int m_myMatter = 0;
-    int m_oppMatter = 0;
-
-    bool m_debugMessagesEnabled = false;
-};
-
-using namespace std;
+class Game;
 
 using namespace std;
 
@@ -145,87 +67,124 @@ struct Entity
             && alliance == other.alliance
             && position == other.position;
     }
-
-    void Process() const;
 };
 
 class EntityManager
 {
-public:
+    friend class Game;
+
+private:
     EntityManager();
     ~EntityManager();
 
-    static EntityManager& GetInstance()
-    {
-        static EntityManager instance;
-        return instance;
-    }
-
-    void CreateEntitiesFromMap();
+    void CreateEntities(const Game& game);
     void AddEntity(const Entity& entity);
-    void RemoveEntity(const Entity& entity);
 
-    void ProcessEntities();
+    void CreateActions(Game& game);
 
-    const vector<Entity>& GetEntities() const { return m_entities; }
+    const vector<Entity>& GetEntities() const;
+    const vector<Entity> GetMyRobots() const;
+    const vector<Entity> GetMyRecyclers() const;
+    const vector<Entity> GetEnemyRobots() const;
+    const vector<Entity> GetEnemyRecyclers() const;
 
-    static const vector<Entity> GetMyRobots()
-    {
-        auto& entities = EntityManager::GetInstance().GetEntities();
-
-        vector<Entity> myEntities;
-        copy_if(entities.begin(), entities.end(), back_inserter(myEntities),
-        [] (const Entity entity)
-        {
-            return entity.alliance == Alliance::ALLIANCE_MY
-                && entity.type == EntityType::ENTITY_TYPE_ROBOT;
-        });
-
-        return myEntities;
-    }
-
-    static const vector<Entity> GetEnemyRobots()
-    {
-        auto& entities = EntityManager::GetInstance().GetEntities();
-
-        vector<Entity> enemyEntities;
-        copy_if(entities.begin(), entities.end(), back_inserter(enemyEntities), 
-        [] (const Entity entity)
-        { 
-            return entity.alliance == Alliance::ALLIANCE_OPP
-                && entity.type == EntityType::ENTITY_TYPE_ROBOT;
-        });
-
-        return enemyEntities;
-    }
-
-    static const Entity& GetNearestEnemyRobot(const Entity& entity)
-    {
-        EntityManager& entityManager = EntityManager::GetInstance();
-        const vector<Entity>& enemyRobots = entityManager.GetEnemyRobots();
-
-        // From the enemyRobots, find the closest one by manhattan distance
-        auto closestEnemy = enemyRobots[0];
-        int closestDistance = entity.position.ManhattanDistance(closestEnemy.position);
-        for (auto& enemy : enemyRobots)
-        {
-            int distance = entity.position.ManhattanDistance(enemy.position);
-            if (distance < closestDistance)
-            {
-                closestDistance = distance;
-                closestEnemy = enemy;
-            }
-        }
-
-        return closestEnemy;
-    }
+    const Entity GetNearestEnemyRobot(const Entity robot) const;
 
 private:
     vector<Entity> m_entities;
 };
 
+using namespace std;
+
+enum class ActionType
+{
+    ACTION_TYPE_NONE,
+
+    ACTION_TYPE_MOVE,
+    ACTION_TYPE_BUILD,
+    ACTION_TYPE_SPAWN,
+    ACTION_TYPE_WAIT,
+    ACTION_TYPE_MESSAGE,
+
+    ACTION_TYPE_COUNT
+};
+
+struct Action
+{
+    ActionType type = ActionType::ACTION_TYPE_NONE;
+    Vec2 from;
+    Vec2 to;
+    const char* message;
+    uint8_t turnId;
+
+    bool operator==(const Action& other) const
+    {
+        return turnId == other.turnId
+            && type == other.type
+            && from == other.from
+            && to == other.to
+            && message == other.message;
+    }
+
+    std::string ActionTypeToString() const
+    {
+        switch (type)
+        {
+            case ActionType::ACTION_TYPE_MOVE: { return "MOVE"; }
+            case ActionType::ACTION_TYPE_BUILD: { return "BUILD"; }
+            case ActionType::ACTION_TYPE_SPAWN: { return "SPAWN"; }
+            case ActionType::ACTION_TYPE_WAIT: { return "WAIT"; }
+            case ActionType::ACTION_TYPE_MESSAGE: { return "MESSAGE"; }
+            default: { return ""; }
+        }
+    }
+
+    std::string ToString() const
+    {
+        std::string s = "Action: ";
+        s += "type: " + ActionTypeToString() + ", ";
+        s += "from: " + from.ToString() + ", ";
+        s += "to: " + to.ToString() + ", ";
+        s += "turnId: " + std::to_string(turnId);
+        return s;
+    }
+
+    std::string AppendAction();
+};
+
+class ActionManager
+{
+    friend class Game;
+
+private:
+    void AddAction(const Action& action);
+
+    std::string CreateActionString();
+
+    const vector<Action>& GetActions() const { return m_actions; }
+
+private:
+    vector<Action> m_actions;
+};
+
 struct TileProperties
 {
+    TileProperties() {}
+    TileProperties(int _x, int _y)
+        : x(_x)
+        , y(_y)
+        , scrapAmount(0)
+        , owner(-1)
+        , units(0)
+        , recycler(0)
+        , canBuild(0)
+        , canSpawn(0)
+        , inRangeOfRecycler(0)
+    {
+    }
+
+    int x; int y; // The position of this tile.
+
     // The first 4 variables describe properties for this tile.
     int scrapAmount;        // the number of times this tile can be recycled before becoming Grass.
     int owner;              // 1 = me, 0 = foe, -1 = neutral
@@ -236,16 +195,43 @@ struct TileProperties
     int canBuild;           // 1 if you are allowed to BUILD a recycler on this tile this turn. 0 otherwise.
     int canSpawn;           // 1 if you are allowed to SPAWN units on this tile this turn. 0 otherwise.
     int inRangeOfRecycler;  // 1 if this tile's scrapAmount will be decreased at the end of the turn by a nearby recycler. 0 otherwise.
+
+    std::string ToString() const
+    {
+        std::string s = "TileProperties: ";
+        s += "x: " + std::to_string(x) + ", ";
+        s += "y: " + std::to_string(y) + ", ";
+        s += "scrapAmount: " + std::to_string(scrapAmount) + ", ";
+        s += "owner: " + std::to_string(owner) + ", ";
+        s += "units: " + std::to_string(units) + ", ";
+        s += "recycler: " + std::to_string(recycler) + ", ";
+        s += "canBuild: " + std::to_string(canBuild) + ", ";
+        s += "canSpawn: " + std::to_string(canSpawn) + ", ";
+        s += "inRangeOfRecycler: " + std::to_string(inRangeOfRecycler);
+        return s;
+    }
+
+    bool operator==(const TileProperties& other) const
+    {
+        return x == other.x &&
+            y == y &&
+            scrapAmount == other.scrapAmount &&
+            owner == other.owner &&
+            units == other.units &&
+            recycler == other.recycler &&
+            canBuild == other.canBuild &&
+            canSpawn == other.canSpawn &&
+            inRangeOfRecycler == other.inRangeOfRecycler;
+    }
 };
 
 class Tile
 {
+    friend class MapManager;
+
 public:
     Tile() {}
     ~Tile() {}
-
-    void Init(Vec2 pos);
-    void SetProperties(TileProperties properties);
 
     bool IsEmpty() const { return m_properties.owner == -1; }
     bool IsMyTile() const { return m_properties.owner == 1; }
@@ -256,40 +242,118 @@ public:
     int GetUnits() const { return m_properties.units; }
 
     bool CanBuildRecycler() const { return m_properties.canBuild == 1; }
-    bool CanSpawnUnits() const { return m_properties.canSpawn == 1; }
+    bool CanSpawnRobot() const { return m_properties.canSpawn == 1; }
     bool IsInRangeOfRecycler() const { return m_properties.inRangeOfRecycler == 1; }
 
-    bool operator==(const Tile& other) const { return m_pos == other.m_pos; }
+    const Vec2 GetPos() const { return { m_properties.x, m_properties.y }; }
+    int GetScrapAmount() const { return m_properties.scrapAmount; }
+    bool CanBuild(const EntityType entityType) const;
+
+    std::string ToString() const
+    {
+        return m_properties.ToString();
+    }
+
+    bool operator==(const Tile& other) const
+    {
+        return m_properties == other.m_properties;
+    }
 
 private:
-    Vec2 m_pos;
     TileProperties m_properties;
 };
 
 class MapManager
 {
-public:
-    MapManager();
-    ~MapManager();
+    friend class Game;
 
-    void Init(Vec2 size);
-
-    static MapManager& GetInstance()
-    {
-        static MapManager instance;
-        return instance;
-    }
-
-    Vec2 GetSize() const { return m_size; }
-
-    void UpdateTileProperties(const Vec2& pos, TileProperties properties);
+private:
+    void CreateTile(const TileProperties& properties);
     const Tile& GetTile(const Vec2& pos) const;
+    const Tile& GetTile(const TileProperties& properties) const;
+
+    const std::vector<Tile>& GetTiles() const { return m_tiles; }
+
+    bool CanBuild(const Vec2& pos, const EntityType entity) const;
 
 private:
     Vec2 m_size;
 
     std::vector<Tile> m_tiles;
 };
+
+class Tile;
+
+struct GameState
+{
+    unsigned char turn = 0;
+    int myMatter = 0;
+    int oppMatter = 0;
+
+    int mySpentMatter = 0;
+};
+
+class Game
+{
+public:
+    Game() {}
+    ~Game() {}
+
+    void Init();
+    void ProcessGameInput();
+    void CreateEntities();
+    void CreateEntityActions();
+    std::string CreateActionString();
+
+    void IncrementTurn() { m_gameState.turn++; }
+    unsigned char GetTurn() const { return m_gameState.turn; }
+
+    int GetMyMatter() const { return m_gameState.myMatter; }
+    int GetMySpentMatter() const { return m_gameState.mySpentMatter; }
+    void PayMatter(int matter) { m_gameState.mySpentMatter -= matter; }
+
+    int GetRandomBetween(int min, int max) const;
+    float GetRandomBetween(float min, float max) const;
+    float GetRandom() const;
+
+    // Building things.
+    bool CanBuild(const Vec2& pos, EntityType entityType) const;
+
+    // Map things.
+    Vec2 GetMapSize() const { return m_mapManager.m_size; }
+    const vector<Tile> GetTiles() const { return m_mapManager.GetTiles(); }
+    const Tile GetTile(const Vec2& pos) const { return m_mapManager.GetTile(pos); }
+
+    // Entity things.
+    const vector<Entity> GetEntities() const { return m_entityManager.GetEntities(); }
+    const vector<Entity> GetMyRobots() const { return m_entityManager.GetMyRobots(); }
+    const vector<Entity> GetMyRecyclers() const { return m_entityManager.GetMyRecyclers(); }
+    const vector<Entity> GetEnemyRobots() const { return m_entityManager.GetEnemyRobots(); }
+
+    // Action things.
+    void AddAction(const Action& action) { m_actionManager.AddAction(action); }
+
+private:
+    void UpdateMyMatter(int matter) { m_gameState.myMatter = matter; }
+    void UpdateOppMatter(int matter) { m_gameState.oppMatter = matter; }
+    void UpdateMySpentMatter(int matter) { m_gameState.mySpentMatter = matter; }
+
+private:
+    GameState m_gameState;
+    ActionManager m_actionManager;
+    EntityManager m_entityManager;
+    MapManager m_mapManager;
+};
+
+using namespace std;
+
+namespace helpers
+{
+    static void PrintDebugMessage(std::string message)
+    {
+        std::cerr << message << endl;
+    }
+}
 
 using namespace std;
 
@@ -298,158 +362,99 @@ using namespace std;
 
 int main()
 {
-    // When game is initialized, the map size is given.
-    Vec2 mapSize = { 0, 0 };
-    cin >> mapSize.x >> mapSize.y;
-    cin.ignore();
-
-    cerr << "map size got" << endl;
-
-    // Initialize the GridMap. This will create all the GridCells.
-    MapManager::GetInstance().Init(mapSize);
+    Game game = Game();
+    game.Init();
 
     // Advance Game Loop
     while (1)
     {
-        cerr << "1.0" << endl;
         // Each loop we will get the current state of the game. Update our GameState.
-        int my_matter;
-        cerr << "1.0.1" << endl;
-        int opp_matter;
-        cerr << "1.0.2" << endl;
-        cin >> my_matter >> opp_matter;
-        cerr << "1.0.3" << endl;
-        cin.ignore();
+        game.ProcessGameInput();
 
-cerr << "1.1" << endl;
+        // Create an entity for each unit on the map.
+        game.CreateEntities();
 
-        GameState& gameState = GameState::GetInstance();
-        cerr << "1.2" << endl;
-        gameState.EnableDebugMessages(false);
-        cerr << "1.3" << endl;
-        gameState.IncrementTurn();
-        cerr << "1.4" << endl;
-        gameState.UpdateMyMatter(my_matter);
-        cerr << "1.5" << endl;
-        gameState.UpdateOppMatter(opp_matter);
-        cerr << "1.6" << endl;
-cerr << "2.0" << endl;
-        // Each loop we will get information for each tile on the map. Update our MapManager's Tiles.
-        MapManager mapManager = MapManager::GetInstance();
-        Vec2 size = mapManager.GetSize();
-        for (int y = 0; y < size.y; y++)
+        // Do we have enough scrap to build a recycler?
+        bool builtOneRecycler = false;
+        while (game.GetMySpentMatter() >= 10)
         {
-            for (int x = 0; x < size.x; x++)
+            helpers::PrintDebugMessage("My Matter: " + to_string(game.GetMyMatter()));
+            helpers::PrintDebugMessage("My Spent Matter: " + to_string(game.GetMySpentMatter()));
+
+            // Get one our robots and spawn another robot on top of it.
+            const vector<Entity> myRobots = game.GetMyRobots();
+            const vector<Entity> myRecyclers = game.GetMyRecyclers();
+            const vector<Entity> enemyRobots = game.GetEnemyRobots();
+
+            const vector<Tile> mapTiles = game.GetTiles();
+            vector<Tile> myTiles;
+            for(auto tile : mapTiles)
             {
-                // Each tile has 7 properties.
-                TileProperties p;
-                cin >> p.scrapAmount >> p.owner >> p.units >> p.recycler >> p.canBuild >> p.canSpawn >> p.inRangeOfRecycler;
-                cin.ignore();
-
-                // Update the tile at position { x, y } with the properties p.
-                mapManager.UpdateTileProperties({ x, y }, p);
+                if (tile.IsMyTile())
+                {
+                    myTiles.push_back(tile);
+                }
             }
-        }
-        
-cerr << "3.0" << endl;
-        // Each loop we will process entities.
-        EntityManager entityManager = EntityManager::GetInstance();
-cerr << "4.0" << endl;
-        // Clear and recreate all entities from current map state.
-        entityManager.CreateEntitiesFromMap(); 
 
-        // Each Entity will process map state and make an action.
-        entityManager.ProcessEntities();
-cerr << "5.0" << endl;
+            // Get a random tile
+            int randomIndex = game.GetRandomBetween(0, myTiles.size() - 1);
+            if (myTiles.size() < 1)
+            {
+                continue;
+            }
+
+            Tile randomTile = myTiles[randomIndex];
+
+            // Decide what action to take, spawn a recycler or a robot.
+            Action action;
+            if (myRecyclers.size() < 1 && !builtOneRecycler && game.CanBuild(randomTile.GetPos(), EntityType::ENTITY_TYPE_RECYCLER))
+            {
+                helpers::PrintDebugMessage("Building a recycler at " + randomTile.GetPos().ToString());
+
+                // Spawn a recycler at the random tile.
+                action.type = ActionType::ACTION_TYPE_SPAWN;
+                action.from = randomTile.GetPos();
+                action.to = Vec2(0, 0);
+                action.turnId = game.GetTurn();
+                game.AddAction(action);
+                game.PayMatter(10);
+                builtOneRecycler = true;
+            }
+
+            // If a recycler was not built this turn, then build robots.
+            if (!builtOneRecycler && game.CanBuild(randomTile.GetPos(), EntityType::ENTITY_TYPE_ROBOT))
+            {
+                // Spawn a robot at the random tile.
+                action.type = ActionType::ACTION_TYPE_SPAWN;
+                action.from = randomTile.GetPos();
+                action.to = Vec2(0, 0);
+                action.turnId = game.GetTurn();
+                game.AddAction(action);
+                game.PayMatter(10);
+            }
+
+            if (action.type == ActionType::ACTION_TYPE_NONE)
+            {
+                break;
+            }
+
+            helpers::PrintDebugMessage("Build Action Performed: " + action.ToString());
+        }
+
+        // Create actions for each entity.
+        game.CreateEntityActions();
+
         // Perform all actions that were created.
-        ActionManager actionManager = ActionManager::GetInstance();
-        actionManager.PerformActions();
-    }
-}
+        cout << game.CreateActionString() << endl;
 
-// ----------------------------------------------
-void Action::Perform()
-{
-    switch (type)
-    {
-        case ActionType::ACTION_TYPE_MOVE:
-        {
-            // Automatic pathfinding.
-            cout << "MOVE " << 1 << " " << from.x << " " << from.y << " " << to.x << " " << to.y << endl;
-            break;
-        }
-
-        case ActionType::ACTION_TYPE_BUILD:
-        {
-            // Builds a recycler.
-            cout << "BUILD " << from.x << " " << from.y << endl;
-            break;
-        }
-
-        case ActionType::ACTION_TYPE_SPAWN:
-        {
-            // Adds unit to an owned tile.
-            cout << "SPAWN " << 1 << " " << from.x << " " << from.y << endl;
-            break;
-        }
-
-        case ActionType::ACTION_TYPE_WAIT:
-        {
-            // Does nothing.
-            cout << "WAIT" << endl;
-            break;
-        }
-
-        case ActionType::ACTION_TYPE_MESSAGE:
-        {
-            // Displays text on your side of the HUD.
-            cout << "MESSAGE " << message << endl;
-            break;
-        }
-
-        default: { break;}
-    }
-}
-
-// ----------------------------------------------
-ActionManager::ActionManager()
-{
-}
-
-// ----------------------------------------------
-ActionManager::~ActionManager()
-{
-}
-
-// ----------------------------------------------
-void ActionManager::PerformActions()
-{
-    cerr << "p1.0 " << m_actions.size() << endl;
-    for (auto& action : m_actions)
-    {
-        action.Perform();
-    }
-}
-
-// ----------------------------------------------
-void ActionManager::AddAction(const Action& action)
-{
-    m_actions.emplace_back(action);
-}
-
-// ----------------------------------------------
-void ActionManager::RemoveAction(const Action& action)
-{
-    auto it = find(m_actions.begin(), m_actions.end(), action);
-    if (it != m_actions.end())
-    {
-        m_actions.erase(it);
+        // Increment the turn.
+        game.IncrementTurn();
     }
 }
 
 namespace
 {
-    Alliance GetTileAlliance(const Tile& tile)
+    Alliance GetEntityAlliance(const Tile& tile)
     {
         Alliance alliance = Alliance::ALLIANCE_NONE;
         if (tile.IsMyTile())
@@ -466,33 +471,6 @@ namespace
 }
 
 // ----------------------------------------------
-void Entity::Process() const
-{
-        GameState gameState = GameState::GetInstance();
-
-        // For now, move this entity to the nearest enemy robot
-        EntityManager entityManager = EntityManager::GetInstance();
-        const vector<Entity>& enemyRobots = entityManager.GetEnemyRobots();
-        const Entity& nearestEnemy = EntityManager::GetNearestEnemyRobot(*this);
-
-        // Create an action to move to the nearest enemy
-        Action action;
-        action.type = ActionType::ACTION_TYPE_MOVE;
-        action.from = position;
-        action.to = nearestEnemy.position;
-        action.turnId = gameState.GetTurn();
-
-        // Add the action to the action manager
-        ActionManager::GetInstance().AddAction(action);
-
-        // Print the action to the console
-        if (gameState.DebugMessagesEnabled())
-        {
-            cout << "Moving from " << action.from.x << ", " << action.from.y << " to " << action.to.x << ", " << action.to.y << endl;
-        }
-    }
-
-// ----------------------------------------------
 EntityManager::EntityManager()
 {
 }
@@ -503,34 +481,22 @@ EntityManager::~EntityManager()
 }
 
 // ----------------------------------------------
-void EntityManager::CreateEntitiesFromMap()
+void EntityManager::CreateEntities(const Game& game)
 {
-    // Clear out the old entities. We will make new ones from the state of the map.
-    m_entities.clear();
-
-    cerr << "c1.0" << endl;
-
-    // Get the map.
-    MapManager& mapManager = MapManager::GetInstance();
-    Vec2 mapSize = mapManager.GetSize();
-    cerr << "c1.0 " << mapSize.x << " " << mapSize.y << endl;
-    for (int y = 0; y < mapSize.y; ++y)
+    // Loop through the map and create new entities that are at each tile.
+    for (int y = 0; y < game.GetMapSize().y; ++y)
     {
-        cerr << "y " << y << endl;
-        for (int x = 0; x < mapSize.x; ++x)
+        for (int x = 0; x < game.GetMapSize().x; ++x)
         {
-            cerr << "x " << x << endl;
-            Vec2 pos(x, y);
-            const Tile& tile = mapManager.GetTile(pos);
-            // print the position of this tile and how many units are at this time
-            cerr << "This tile: " << pos.x << " " << pos.y << " " << tile.GetUnits() << endl;
+            const Tile& tile = game.GetTile({ x, y });
 
             // A tile can have a recycler or units, not both.
             if (tile.HasRecycler())
             {
                 Entity entity;
                 entity.type = EntityType::ENTITY_TYPE_RECYCLER;
-                entity.alliance = GetTileAlliance(tile);
+                entity.alliance = GetEntityAlliance(tile);
+                entity.position = { x, y };
                 AddEntity(entity);
             }
             else if (tile.HasUnits())
@@ -539,7 +505,8 @@ void EntityManager::CreateEntitiesFromMap()
                 {
                     Entity entity;
                     entity.type = EntityType::ENTITY_TYPE_ROBOT;
-                    entity.alliance = GetTileAlliance(tile);
+                    entity.alliance = GetEntityAlliance(tile);
+                    entity.position = { x, y };
                     AddEntity(entity);
                 }
             }
@@ -550,78 +517,379 @@ void EntityManager::CreateEntitiesFromMap()
 // ----------------------------------------------
 void EntityManager::AddEntity(const Entity& entity)
 {
-    m_entities.emplace_back(entity);
+    m_entities.push_back(entity);
 }
 
 // ----------------------------------------------
-void EntityManager::RemoveEntity(const Entity& entity)
+void EntityManager::CreateActions(Game& game)
 {
-    auto it = find(m_entities.begin(), m_entities.end(), entity);
-    if (it != m_entities.end())
+    const vector<Entity> myRobots = GetMyRobots();
+
+    helpers::PrintDebugMessage("My robots: " + std::to_string(myRobots.size()));
+
+    for (const Entity robot : myRobots)
     {
-        m_entities.erase(it);
-    }
-}
-
-// ----------------------------------------------
-void EntityManager::ProcessEntities()
-{
-    cerr << "e1.0" << endl;
-
-    const auto& myRobots = GetMyRobots();
-    cerr << "e1.1 " << myRobots.size() << endl;
-
-    for (auto&& robot : myRobots)
-    {
-        robot.Process();
-    }
-}
-
-// ----------------------------------------------
-MapManager::MapManager()
-{
-}
-
-// ----------------------------------------------
-MapManager::~MapManager()
-{
-}
-
-// ----------------------------------------------
-void Tile::Init(Vec2 pos)
-{
-    m_pos = pos;
-}
-
-// ----------------------------------------------
-void Tile::SetProperties(TileProperties properties)
-{
-    m_properties = properties;
-}
-
-// ----------------------------------------------
-void MapManager::Init(Vec2 size)
-{
-    m_size = size;
-
-    m_tiles.resize(size.x * size.y);
-    for (int y = 0; y < size.y; ++y)
-    {
-        for (int x = 0; x < size.x; ++x)
+        // For now, move this entity to the nearest enemy robot
+        const vector<Entity> enemyRobots = GetEnemyRobots();
+        if (enemyRobots.size() < 1)
         {
-            m_tiles[y * size.x + x].Init({ x, y });
+            // No enemy robots, so do nothing
+            continue;
+        }
+        const Entity nearestEnemy = GetNearestEnemyRobot(robot);
+
+        // Create an action to move to the nearest enemy
+        Action action;
+        action.type = ActionType::ACTION_TYPE_MOVE;
+        action.from = robot.position;
+        action.to = nearestEnemy.position;
+        action.turnId = game.GetTurn();
+        game.AddAction(action);
+    }
+
+    helpers::PrintDebugMessage("Done creating actions!");
+}
+
+// ----------------------------------------------
+const vector<Entity>& EntityManager::GetEntities() const
+{
+    return m_entities;
+}
+
+// ----------------------------------------------
+const vector<Entity> EntityManager::GetMyRobots() const
+{
+    vector<Entity> myRobots;
+
+    for (const Entity& entity : m_entities)
+    {
+        if (entity.alliance == Alliance::ALLIANCE_MY
+            && entity.type == EntityType::ENTITY_TYPE_ROBOT)
+        {
+            myRobots.push_back(entity);
         }
     }
+
+    return myRobots;
 }
 
 // ----------------------------------------------
-void MapManager::UpdateTileProperties(const Vec2& pos, TileProperties properties)
+const vector<Entity> EntityManager::GetMyRecyclers() const
 {
-    m_tiles[pos.y * m_size.x + pos.x].SetProperties(properties);
+    vector<Entity> myRecyclers;
+
+    for (const Entity& entity : m_entities)
+    {
+        if (entity.alliance == Alliance::ALLIANCE_MY
+            && entity.type == EntityType::ENTITY_TYPE_RECYCLER)
+        {
+            myRecyclers.push_back(entity);
+        }
+    }
+
+    return myRecyclers;
+}
+
+// ----------------------------------------------
+const vector<Entity> EntityManager::GetEnemyRobots() const
+{
+    vector<Entity> enemyRobots;
+
+    for (const Entity& entity : m_entities)
+    {
+        if (entity.alliance == Alliance::ALLIANCE_OPP
+            && entity.type == EntityType::ENTITY_TYPE_ROBOT)
+        {
+            enemyRobots.push_back(entity);
+        }
+    }
+
+    return enemyRobots;
+}
+
+// ----------------------------------------------
+const vector<Entity> EntityManager::GetEnemyRecyclers() const
+{
+    vector<Entity> enemyRecyclers;
+
+    for (const Entity& entity : m_entities)
+    {
+        if (entity.alliance == Alliance::ALLIANCE_OPP
+            && entity.type == EntityType::ENTITY_TYPE_RECYCLER)
+        {
+            enemyRecyclers.push_back(entity);
+        }
+    }
+
+    return enemyRecyclers;
+}
+
+// ----------------------------------------------
+const Entity EntityManager::GetNearestEnemyRobot(const Entity robot) const
+{
+    const vector<Entity> enemyRobots = GetEnemyRobots();
+    if(enemyRobots.size() < 1)
+    {
+        // No enemy robots, so return the first robot
+        Entity entity;
+        entity.position = { 0, 0 };
+        return entity;
+    }
+
+    // Find the nearest enemy robot
+    int nearestDistance = 9999;
+    Entity nearestEnemy = enemyRobots[0];
+    for (const Entity enemy : enemyRobots)
+    {
+        const int distance = robot.position.ManhattanDistance(enemy.position);
+        if (distance < nearestDistance)
+        {
+            nearestDistance = distance;
+            nearestEnemy = enemy;
+        }
+    }
+
+    return nearestEnemy;
+}
+
+// ----------------------------------------------
+void Game::Init()
+{
+    // When game is initialized, the map size is given.
+    // Note: two integers width and height for the size of the map. The top-left tile is (x,y) = (0,0).
+    Vec2 mapSize = { 0, 0 };
+    cin >> mapSize.x >> mapSize.y;
+    cin.ignore();
+
+    m_mapManager.m_size = mapSize;
+}
+
+// ----------------------------------------------
+void Game::ProcessGameInput()
+{
+    // Read in how many resources each player has.
+    // Note: two integers myMatter and oppMatter for the amount of matter owned by each player.
+    int my_matter;
+    int opp_matter;
+    cin >> my_matter >> opp_matter;
+    cin.ignore();
+
+    UpdateMyMatter(my_matter);
+    UpdateOppMatter(opp_matter);
+    UpdateMySpentMatter(my_matter);
+
+    // Clear all the old data.
+    m_mapManager.m_tiles.clear();
+    m_entityManager.m_entities.clear();
+    m_actionManager.m_actions.clear();
+
+    // Each loop we will get information for each tile on the map, recreate everything again with new state.
+    // Note: (width * height) number of inputs, starting at (0,0) and incrementing from left to right, top to bottom. Each cell is represented by 7 integers.
+    for (int y = 0; y < m_mapManager.m_size.y; y++)
+    {
+        for (int x = 0; x < m_mapManager.m_size.x; x++)
+        {
+            // Each tile has 7 properties.
+            TileProperties p({ x, y });
+            cin >> p.scrapAmount >> p.owner >> p.units >> p.recycler >> p.canBuild >> p.canSpawn >> p.inRangeOfRecycler;
+            cin.ignore();
+
+            // Update the tile with the new properties.
+            m_mapManager.CreateTile(p);
+        }
+    }
+
+    helpers::PrintDebugMessage("Tile count: " + std::to_string(m_mapManager.m_tiles.size()));
+}
+
+// ----------------------------------------------
+void Game::CreateEntities()
+{
+    // Create entities from the map.
+    m_entityManager.CreateEntities(*this);
+
+    helpers::PrintDebugMessage("Created entity count: " + std::to_string(m_entityManager.m_entities.size()));
+}
+
+// ----------------------------------------------
+void Game::CreateEntityActions()
+{
+    // Create actions for each entity.
+    m_entityManager.CreateActions(*this);
+}
+
+// ----------------------------------------------
+std::string Game::CreateActionString()
+{
+    // Send the actions to the game.
+    return m_actionManager.CreateActionString();
+}
+
+// ----------------------------------------------
+bool Game::CanBuild(const Vec2& pos, EntityType entityType) const
+{
+    return m_mapManager.CanBuild(pos, entityType);
+}
+
+// ----------------------------------------------
+int Game::GetRandomBetween(int min, int max) const
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(min, max);
+
+    return dis(gen);
+}
+
+// ----------------------------------------------
+float Game::GetRandomBetween(float min, float max) const
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(min, max);
+
+    return dis(gen);
+}
+
+// ----------------------------------------------
+float Game::GetRandom() const
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0f, 1.0f);
+
+    return dis(gen);
+}
+
+// ----------------------------------------------
+std::string Action::AppendAction()
+{
+    std::string actionString = "";
+
+    switch (type)
+    {
+        case ActionType::ACTION_TYPE_MOVE:
+        {
+            // Automatic pathfinding.
+            actionString =  "MOVE " + 
+            std::to_string(1) + " " + 
+            std::to_string(from.x) + " " + 
+            std::to_string(from.y) + " " + 
+            std::to_string(to.x) + " " + 
+            std::to_string(to.y);
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_BUILD:
+        {
+            // Builds a recycler.
+            actionString = "BUILD " +
+            std::to_string(from.x) + " " +
+            std::to_string(from.y);
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_SPAWN:
+        {
+            // Adds unit to an owned tile.
+            actionString = "SPAWN " +
+            std::to_string(1) + " " +
+            std::to_string(from.x) + " " +
+            std::to_string(from.y);
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_WAIT:
+        {
+            // Does nothing.
+            actionString = "WAIT";
+            break;
+        }
+
+        case ActionType::ACTION_TYPE_MESSAGE:
+        {
+            // Displays text on your side of the HUD.
+            // cout << "MESSAGE " << message << endl;
+            actionString = "";
+            break;
+        }
+
+        default: { actionString = ""; break;}
+    }
+
+    actionString += ";";
+    return actionString;
+}
+
+// ----------------------------------------------
+void ActionManager::AddAction(const Action& action)
+{
+    m_actions.push_back(action);
+}
+
+// ----------------------------------------------
+std::string ActionManager::CreateActionString()
+{
+    std::string actionString = "";
+
+    // use PrintDebugMessage to print the size of actions
+    helpers::PrintDebugMessage("ActionManager::action count: " + std::to_string(m_actions.size()));
+
+    for (auto& action : m_actions)
+    {
+        actionString += action.AppendAction();
+    }
+
+    if (actionString.empty())
+    {
+        actionString = "WAIT";
+    }
+
+    return actionString;
+}
+
+// ----------------------------------------------
+// Tile
+// ----------------------------------------------
+bool Tile::CanBuild(const EntityType entityType) const
+{
+    if (entityType == EntityType::ENTITY_TYPE_RECYCLER)
+    {
+        return CanBuildRecycler();
+    }
+    else if (entityType == EntityType::ENTITY_TYPE_ROBOT)
+    {
+        return CanSpawnRobot();
+    }
+    else
+    {
+        return false;
+    }
+}
+
+// ----------------------------------------------
+void MapManager::CreateTile(const TileProperties& properties)
+{
+    Tile tile;
+    tile.m_properties = properties;
+
+    m_tiles.push_back(tile);
 }
 
 // ----------------------------------------------
 const Tile& MapManager::GetTile(const Vec2& pos) const
 {
     return m_tiles[pos.y * m_size.x + pos.x];
+}
+
+// ----------------------------------------------
+const Tile& MapManager::GetTile(const TileProperties& properties) const
+{
+    return GetTile(Vec2(properties.x, properties.y));
+}
+
+// ----------------------------------------------
+bool MapManager::CanBuild(const Vec2& pos, const EntityType entity) const
+{
+    return GetTile(pos).CanBuild(entity);
 }

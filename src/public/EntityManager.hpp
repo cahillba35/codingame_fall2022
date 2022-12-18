@@ -1,14 +1,13 @@
 #pragma once
 
-#include "ActionManager.hpp"
-#include "GameState.hpp"
-
-#include "filters.hpp"
+#include "vec2.hpp"
 
 #include <algorithm>
 #include <iterator>
 #include <iostream>
 #include <vector>
+
+class Game;
 
 using namespace std;
 
@@ -44,80 +43,28 @@ struct Entity
             && alliance == other.alliance
             && position == other.position;
     }
-
-    void Process() const;
 };
 
 class EntityManager
 {
-public:
+    friend class Game;
+
+private:
     EntityManager();
     ~EntityManager();
 
-    static EntityManager& GetInstance()
-    {
-        static EntityManager instance;
-        return instance;
-    }
-
-    void CreateEntitiesFromMap();
+    void CreateEntities(const Game& game);
     void AddEntity(const Entity& entity);
-    void RemoveEntity(const Entity& entity);
 
-    void ProcessEntities();
+    void CreateActions(Game& game);
 
-    const vector<Entity>& GetEntities() const { return m_entities; }
+    const vector<Entity>& GetEntities() const;
+    const vector<Entity> GetMyRobots() const;
+    const vector<Entity> GetMyRecyclers() const;
+    const vector<Entity> GetEnemyRobots() const;
+    const vector<Entity> GetEnemyRecyclers() const;
 
-    static const vector<Entity> GetMyRobots()
-    {
-        auto& entities = EntityManager::GetInstance().GetEntities();
-
-        vector<Entity> myEntities;
-        copy_if(entities.begin(), entities.end(), back_inserter(myEntities),
-        [] (const Entity entity)
-        {
-            return entity.alliance == Alliance::ALLIANCE_MY
-                && entity.type == EntityType::ENTITY_TYPE_ROBOT;
-        });
-
-        return myEntities;
-    }
-
-    static const vector<Entity> GetEnemyRobots()
-    {
-        auto& entities = EntityManager::GetInstance().GetEntities();
-
-        vector<Entity> enemyEntities;
-        copy_if(entities.begin(), entities.end(), back_inserter(enemyEntities), 
-        [] (const Entity entity)
-        { 
-            return entity.alliance == Alliance::ALLIANCE_OPP
-                && entity.type == EntityType::ENTITY_TYPE_ROBOT;
-        });
-
-        return enemyEntities;
-    }
-
-    static const Entity& GetNearestEnemyRobot(const Entity& entity)
-    {
-        EntityManager& entityManager = EntityManager::GetInstance();
-        const vector<Entity>& enemyRobots = entityManager.GetEnemyRobots();
-
-        // From the enemyRobots, find the closest one by manhattan distance
-        auto closestEnemy = enemyRobots[0];
-        int closestDistance = entity.position.ManhattanDistance(closestEnemy.position);
-        for (auto& enemy : enemyRobots)
-        {
-            int distance = entity.position.ManhattanDistance(enemy.position);
-            if (distance < closestDistance)
-            {
-                closestDistance = distance;
-                closestEnemy = enemy;
-            }
-        }
-
-        return closestEnemy;
-    }
+    const Entity GetNearestEnemyRobot(const Entity robot) const;
 
 private:
     vector<Entity> m_entities;

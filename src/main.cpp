@@ -1,8 +1,13 @@
+#include "../public/vec2.hpp"
+#include "../public/helpers.hpp"
+
+#include "public/Game.hpp"
+
 #include "public/ActionManager.hpp"
 #include "public/EntityManager.hpp"
-#include "public/GameState.hpp"
 #include "public/MapManager.hpp"
-#include "public/Vec2.hpp"
+
+#include "public/helpers.hpp"
 
 #include <iostream>
 #include <string>
@@ -16,71 +21,92 @@ using namespace std;
 
 int main()
 {
-    // When game is initialized, the map size is given.
-    Vec2 mapSize = { 0, 0 };
-    cin >> mapSize.x >> mapSize.y;
-    cin.ignore();
-
-    cerr << "map size got" << endl;
-
-    // Initialize the GridMap. This will create all the GridCells.
-    MapManager::GetInstance().Init(mapSize);
+    Game game = Game();
+    game.Init();
 
     // Advance Game Loop
     while (1)
     {
-        cerr << "1.0" << endl;
         // Each loop we will get the current state of the game. Update our GameState.
-        int my_matter;
-        cerr << "1.0.1" << endl;
-        int opp_matter;
-        cerr << "1.0.2" << endl;
-        cin >> my_matter >> opp_matter;
-        cerr << "1.0.3" << endl;
-        cin.ignore();
+        game.ProcessGameInput();
 
-cerr << "1.1" << endl;
+        // Create an entity for each unit on the map.
+        game.CreateEntities();
 
-        GameState& gameState = GameState::GetInstance();
-        cerr << "1.2" << endl;
-        gameState.EnableDebugMessages(false);
-        cerr << "1.3" << endl;
-        gameState.IncrementTurn();
-        cerr << "1.4" << endl;
-        gameState.UpdateMyMatter(my_matter);
-        cerr << "1.5" << endl;
-        gameState.UpdateOppMatter(opp_matter);
-        cerr << "1.6" << endl;
-cerr << "2.0" << endl;
-        // Each loop we will get information for each tile on the map. Update our MapManager's Tiles.
-        MapManager mapManager = MapManager::GetInstance();
-        Vec2 size = mapManager.GetSize();
-        for (int y = 0; y < size.y; y++)
+        // TODO: Create BuildManager and move this logic there.
+
+        // Do we have enough scrap to build a recycler?
+        bool builtOneRecycler = false;
+        while (game.GetMySpentMatter() >= 10)
         {
-            for (int x = 0; x < size.x; x++)
+            helpers::PrintDebugMessage("My Matter: " + to_string(game.GetMyMatter()));
+            helpers::PrintDebugMessage("My Spent Matter: " + to_string(game.GetMySpentMatter()));
+
+            // Get one our robots and spawn another robot on top of it.
+            const vector<Entity> myRobots = game.GetMyRobots();
+            const vector<Entity> myRecyclers = game.GetMyRecyclers();
+            const vector<Entity> enemyRobots = game.GetEnemyRobots();
+
+            const vector<Tile> mapTiles = game.GetTiles();
+            vector<Tile> myTiles;
+            for(auto tile : mapTiles)
             {
-                // Each tile has 7 properties.
-                TileProperties p;
-                cin >> p.scrapAmount >> p.owner >> p.units >> p.recycler >> p.canBuild >> p.canSpawn >> p.inRangeOfRecycler;
-                cin.ignore();
-
-                // Update the tile at position { x, y } with the properties p.
-                mapManager.UpdateTileProperties({ x, y }, p);
+                if (tile.IsMyTile())
+                {
+                    myTiles.push_back(tile);
+                }
             }
-        }
-        
-cerr << "3.0" << endl;
-        // Each loop we will process entities.
-        EntityManager entityManager = EntityManager::GetInstance();
-cerr << "4.0" << endl;
-        // Clear and recreate all entities from current map state.
-        entityManager.CreateEntitiesFromMap(); 
 
-        // Each Entity will process map state and make an action.
-        entityManager.ProcessEntities();
-cerr << "5.0" << endl;
+            // Get a random tile
+            int randomIndex = game.GetRandomBetween(0, myTiles.size() - 1);
+            if (myTiles.size() < 1)
+            {
+                continue;
+            }
+
+            Tile randomTile = myTiles[randomIndex];
+
+            // Decide what action to take, spawn a recycler or a robot.
+            Action action;
+            if (myRecyclers.size() < 1 && !builtOneRecycler && game.CanBuild(randomTile.GetPos(), EntityType::ENTITY_TYPE_RECYCLER))
+            {
+                // Spawn a recycler at the random tile.
+                action.type = ActionType::ACTION_TYPE_SPAWN;
+                action.from = randomTile.GetPos();
+                action.to = Vec2(0, 0);
+                action.turnId = game.GetTurn();
+                game.AddAction(action);
+                game.PayMatter(10);
+                builtOneRecycler = true;
+            }
+
+            // If a recycler was not built this turn, then build robots.
+            if (!builtOneRecycler && game.CanBuild(randomTile.GetPos(), EntityType::ENTITY_TYPE_ROBOT))
+            {
+                // Spawn a robot at the random tile.
+                action.type = ActionType::ACTION_TYPE_SPAWN;
+                action.from = randomTile.GetPos();
+                action.to = Vec2(0, 0);
+                action.turnId = game.GetTurn();
+                game.AddAction(action);
+                game.PayMatter(10);
+            }
+
+            if (action.type == ActionType::ACTION_TYPE_NONE)
+            {
+                break;
+            }
+
+            helpers::PrintDebugMessage("Build Action Performed: " + action.ToString());
+        }
+
+        // Create actions for each entity.
+        game.CreateEntityActions();
+
         // Perform all actions that were created.
-        ActionManager actionManager = ActionManager::GetInstance();
-        actionManager.PerformActions();
+        cout << game.CreateActionString() << endl;
+
+        // Increment the turn.
+        game.IncrementTurn();
     }
 }

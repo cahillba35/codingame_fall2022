@@ -1,51 +1,51 @@
 #include "../public/MapManager.hpp"
-#include "../public/Vec2.hpp"
+
+#include "../public/Game.hpp"
+
+#include "../public/helpers.hpp"
 
 // ----------------------------------------------
-MapManager::MapManager()
-{
-}
-
+// Tile
 // ----------------------------------------------
-MapManager::~MapManager()
+bool Tile::CanBuild(const EntityType entityType) const
 {
-}
-
-// ----------------------------------------------
-void Tile::Init(Vec2 pos)
-{
-    m_pos = pos;
-}
-
-// ----------------------------------------------
-void Tile::SetProperties(TileProperties properties)
-{
-    m_properties = properties;
-}
-
-// ----------------------------------------------
-void MapManager::Init(Vec2 size)
-{
-    m_size = size;
-
-    m_tiles.resize(size.x * size.y);
-    for (int y = 0; y < size.y; ++y)
+    if (entityType == EntityType::ENTITY_TYPE_RECYCLER)
     {
-        for (int x = 0; x < size.x; ++x)
-        {
-            m_tiles[y * size.x + x].Init({ x, y });
-        }
+        return CanBuildRecycler();
+    }
+    else if (entityType == EntityType::ENTITY_TYPE_ROBOT)
+    {
+        return CanSpawnRobot();
+    }
+    else
+    {
+        return false;
     }
 }
 
 // ----------------------------------------------
-void MapManager::UpdateTileProperties(const Vec2& pos, TileProperties properties)
+void MapManager::CreateTile(const TileProperties& properties)
 {
-    m_tiles[pos.y * m_size.x + pos.x].SetProperties(properties);
+    Tile tile;
+    tile.m_properties = properties;
+
+    m_tiles.push_back(tile);
 }
 
 // ----------------------------------------------
 const Tile& MapManager::GetTile(const Vec2& pos) const
 {
     return m_tiles[pos.y * m_size.x + pos.x];
+}
+
+// ----------------------------------------------
+const Tile& MapManager::GetTile(const TileProperties& properties) const
+{
+    return GetTile(Vec2(properties.x, properties.y));
+}
+
+// ----------------------------------------------
+bool MapManager::CanBuild(const Vec2& pos, const EntityType entity) const
+{
+    return GetTile(pos).CanBuild(entity);
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Vec2.hpp"
+#include "vec2.hpp"
 
 #include <iostream>
 #include <vector>
@@ -22,7 +22,7 @@ enum class ActionType
 
 struct Action
 {
-    ActionType type;
+    ActionType type = ActionType::ACTION_TYPE_NONE;
     Vec2 from;
     Vec2 to;
     const char* message;
@@ -37,24 +37,40 @@ struct Action
             && message == other.message;
     }
 
-    void Perform();
+    std::string ActionTypeToString() const
+    {
+        switch (type)
+        {
+            case ActionType::ACTION_TYPE_MOVE: { return "MOVE"; }
+            case ActionType::ACTION_TYPE_BUILD: { return "BUILD"; }
+            case ActionType::ACTION_TYPE_SPAWN: { return "SPAWN"; }
+            case ActionType::ACTION_TYPE_WAIT: { return "WAIT"; }
+            case ActionType::ACTION_TYPE_MESSAGE: { return "MESSAGE"; }
+            default: { return ""; }
+        }
+    }
+
+    std::string ToString() const
+    {
+        std::string s = "Action: ";
+        s += "type: " + ActionTypeToString() + ", ";
+        s += "from: " + from.ToString() + ", ";
+        s += "to: " + to.ToString() + ", ";
+        s += "turnId: " + std::to_string(turnId);
+        return s;
+    }
+
+    std::string AppendAction();
 };
 
 class ActionManager
 {
-public:
-    ActionManager();
-    ~ActionManager();
+    friend class Game;
 
-    static ActionManager& GetInstance()
-    {
-        static ActionManager instance;
-        return instance;
-    }
-
-    void PerformActions();
+private:
     void AddAction(const Action& action);
-    void RemoveAction(const Action& action);
+
+    std::string CreateActionString();
 
     const vector<Action>& GetActions() const { return m_actions; }
 

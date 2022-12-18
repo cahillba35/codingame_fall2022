@@ -1,81 +1,90 @@
 #include "../public/ActionManager.hpp"
 
+#include "../public/helpers.hpp"
+
 // ----------------------------------------------
-void Action::Perform()
+std::string Action::AppendAction()
 {
+    std::string actionString = "";
+
     switch (type)
     {
         case ActionType::ACTION_TYPE_MOVE:
         {
             // Automatic pathfinding.
-            cout << "MOVE " << 1 << " " << from.x << " " << from.y << " " << to.x << " " << to.y << endl;
+            actionString =  "MOVE " + 
+            std::to_string(1) + " " + 
+            std::to_string(from.x) + " " + 
+            std::to_string(from.y) + " " + 
+            std::to_string(to.x) + " " + 
+            std::to_string(to.y);
             break;
         }
 
         case ActionType::ACTION_TYPE_BUILD:
         {
             // Builds a recycler.
-            cout << "BUILD " << from.x << " " << from.y << endl;
+            actionString = "BUILD " +
+            std::to_string(from.x) + " " +
+            std::to_string(from.y);
             break;
         }
 
         case ActionType::ACTION_TYPE_SPAWN:
         {
             // Adds unit to an owned tile.
-            cout << "SPAWN " << 1 << " " << from.x << " " << from.y << endl;
+            actionString = "SPAWN " +
+            std::to_string(1) + " " +
+            std::to_string(from.x) + " " +
+            std::to_string(from.y);
             break;
         }
 
         case ActionType::ACTION_TYPE_WAIT:
         {
             // Does nothing.
-            cout << "WAIT" << endl;
+            actionString = "WAIT";
             break;
         }
 
         case ActionType::ACTION_TYPE_MESSAGE:
         {
             // Displays text on your side of the HUD.
-            cout << "MESSAGE " << message << endl;
+            // cout << "MESSAGE " << message << endl;
+            actionString = "";
             break;
         }
 
-        default: { break;}
+        default: { actionString = ""; break;}
     }
-}
 
-// ----------------------------------------------
-ActionManager::ActionManager()
-{
-}
-
-// ----------------------------------------------
-ActionManager::~ActionManager()
-{
-}
-
-// ----------------------------------------------
-void ActionManager::PerformActions()
-{
-    cerr << "p1.0 " << m_actions.size() << endl;
-    for (auto& action : m_actions)
-    {
-        action.Perform();
-    }
+    actionString += ";";
+    return actionString;
 }
 
 // ----------------------------------------------
 void ActionManager::AddAction(const Action& action)
 {
-    m_actions.emplace_back(action);
+    m_actions.push_back(action);
 }
 
 // ----------------------------------------------
-void ActionManager::RemoveAction(const Action& action)
+std::string ActionManager::CreateActionString()
 {
-    auto it = find(m_actions.begin(), m_actions.end(), action);
-    if (it != m_actions.end())
+    std::string actionString = "";
+
+    // use PrintDebugMessage to print the size of actions
+    helpers::PrintDebugMessage("ActionManager::action count: " + std::to_string(m_actions.size()));
+
+    for (auto& action : m_actions)
     {
-        m_actions.erase(it);
+        actionString += action.AppendAction();
     }
+
+    if (actionString.empty())
+    {
+        actionString = "WAIT";
+    }
+
+    return actionString;
 }
